@@ -1,0 +1,12 @@
+[package]
+name = "ocl_test"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+colorify = "0.2.3"
+image = "0.24.4"
+ocl = "0.19.4"
+ocl-extras = "0.1.1"
