@@ -4,7 +4,7 @@ __constant sampler_t sampler_const =
   CLK_ADDRESS_NONE |
   CLK_FILTER_NEAREST;
 
-float map_value(float value, float low1, float high1, float low2, float high2)
+inline float map_value(float value, float low1, float high1, float low2, float high2)
 {
   float back_value = low2 + (value - low1) * (high2 - low2) / (high1 - low1);
   return back_value;
