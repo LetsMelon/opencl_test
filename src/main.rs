@@ -1,10 +1,16 @@
+use anyhow::Result;
 use ocl::enums::*;
 use ocl::{Context, Device, Image, Kernel, Program, Queue, Sampler};
 use std::time::Instant;
 
+mod info;
+
+use info::*;
+
 static KERNEL_SRC: &'static str = include_str!("./gpu.cl");
 
-const SIZE_POW: u32 = 8;
+const SIZE_POW: u32 = 10;
+
 #[cfg(feature = "10")]
 const ITERATIONS: u32 = 10;
 #[cfg(feature = "100")]
@@ -18,7 +24,6 @@ const ITERATIONS: u32 = 100000;
 #[cfg(feature = "1000000")]
 const ITERATIONS: u32 = 1000000;
 
-/// Generates a diagonal reddish stripe and a grey background.
 fn generate_image() -> image::ImageBuffer<image::Rgba<u8>, Vec<u8>> {
     let size = 2_u32.pow(SIZE_POW);
     let diff = (0.046875 * size as f64) as u32;
@@ -36,33 +41,32 @@ fn generate_image() -> image::ImageBuffer<image::Rgba<u8>, Vec<u8>> {
 }
 
 /// Generates and image then sends it through a kernel and optionally saves.
-fn main() {
+fn main() -> Result<()> {
     let mut img = generate_image();
 
     let context = Context::builder()
         .devices(Device::specifier().first())
-        .build()
-        .unwrap();
+        .build()?;
+    print_context_info(&context);
+
     let device = context.devices()[0];
-    let queue = Queue::new(&context, device, None).unwrap();
+    print_device_info(&device)?;
+
+    let queue = Queue::new(&context, device, None)?;
 
     let program = Program::builder()
         .src(KERNEL_SRC)
         .devices(device)
-        .build(&context)
-        .unwrap();
+        .build(&context)?;
+    // print_program_info(&program);
 
-    let sup_img_formats = Image::<u8>::supported_formats(
+    /*     let sup_img_formats = Image::<u8>::supported_formats(
         &context,
         ocl::flags::MEM_READ_WRITE,
         MemObjectType::Image2d,
-    )
-    .unwrap();
-    println!("Image formats supported: {}.", sup_img_formats.len());
-    // println!("Image Formats: {:#?}.", sup_img_formats);
+    )?; */
 
     let dims = img.dimensions();
-    println!("dims: {:?}", dims);
 
     let src_image = Image::<u8>::builder()
         .channel_order(ImageChannelOrder::Rgba)
@@ -76,8 +80,7 @@ fn main() {
         )
         .copy_host_slice(&img)
         .queue(queue.clone())
-        .build()
-        .unwrap();
+        .build()?;
 
     let dst_image = Image::<u8>::builder()
         .channel_order(ImageChannelOrder::Rgba)
@@ -91,11 +94,10 @@ fn main() {
         )
         .copy_host_slice(&img)
         .queue(queue.clone())
-        .build()
-        .unwrap();
+        .build()?;
 
     // Not sure why you'd bother creating a sampler on the host but here's how:
-    let sampler = Sampler::new(&context, true, AddressingMode::None, FilterMode::Nearest).unwrap();
+    let sampler = Sampler::new(&context, true, AddressingMode::None, FilterMode::Nearest)?;
 
     let mut durations = Vec::new();
 
@@ -112,14 +114,13 @@ fn main() {
             .arg(&ITERATIONS)
             .arg(&src_image)
             .arg(&dst_image)
-            .build()
-            .unwrap();
+            .build()?;
 
         unsafe {
-            kernel.enq().unwrap();
+            kernel.enq()?;
         }
 
-        dst_image.read(&mut img).enq().unwrap();
+        dst_image.read(&mut img).enq()?;
 
         let p1 = img.get_pixel(dims.0 / 4, dims.1 / 4).0;
         let p2 = img.get_pixel(dims.0 / 2, dims.1 / 2).0;
@@ -131,8 +132,8 @@ fn main() {
         assert_eq!(p2[0], 128);
         assert_eq!(p2[1], 128);
 
-        assert_eq!(p3[0], 192);
-        assert_eq!(p3[1], 192);
+        assert_eq!(p3[0], 191);
+        assert_eq!(p3[1], 191);
 
         let delta = now.elapsed().as_millis() as u64;
 
@@ -147,6 +148,7 @@ fn main() {
     let avg = (summed as f64) / (ITERATIONS as f64);
     let bytes = dims.0 * dims.1 * 4;
 
+    println!("dims: {:?}", dims);
     println!("iterations: {}", ITERATIONS);
     println!("sum: {} ms", summed);
     println!("avg: {:.2} ms", avg);
@@ -156,4 +158,6 @@ fn main() {
         "GB/s: {:.2}",
         (1000.0 / avg * (bytes as f64)) / 1024_f64.powi(3)
     );
+
+    Ok(())
 }
